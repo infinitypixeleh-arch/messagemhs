@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>School Forum</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body {
+  margin: 0;
+  font-family: "Segoe UI", sans-serif;
+  background: #2b2d31;
+  color: white;
+  display: flex;
+  height: 100vh;
+}
+
+/* LEFT SIDEBAR (FORUMS) */
+#forumsBar {
+  width: 220px;
+  background: #1e1f22;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.forumItem {
+  padding: 8px;
+  margin-bottom: 5px;
+  background: #313338;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.forumItem:hover {
+  background: #3a3d44;
+}
+
+#newForumBtn {
+  margin-top: 10px;
+  width: 100%;
+}
+
+/* CHAT AREA */
+#chatArea {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+#messages {
+  flex: 1;
+  padding: 15px;
+  overflow-y: auto;
+}
+
+.message {
+  margin-bottom: 15px;
+}
+
+.username {
+  font-weight: bold;
+  font-size: 13px;
+}
+
+.text {
+  font-size: 14px;
+  margin-top: 3px;
+}
+
+img.messageImage {
+  max-width: 250px;
+  border-radius: 6px;
+  margin-top: 5px;
+}
+
+.controls {
+  font-size: 11px;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+/* INPUT AREA */
+#inputArea {
+  padding: 10px;
+  background: #313338;
+  display: flex;
+  gap: 5px;
+}
+
+#messageInput {
+  flex: 1;
+  padding: 8px;
+  border-radius: 5px;
+  border: none;
+  background: #383a40;
+  color: white;
+}
+
+button {
+  padding: 8px;
+  border: none;
+  border-radius: 5px;
+  background: #5865f2;
+  color: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #4752c4;
+}
+
+/* AUTH */
+#authBox {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: #1e1f22;
+  padding: 20px;
+  border-radius: 8px;
+  width: 280px;
+}
+
+input {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 8px;
+  border-radius: 5px;
+  border: none;
+  background: #383a40;
+  color: white;
+}
+
+.hidden {
+  display: none;
+}
+</style>
+</head>
+
+<body>
+
+<div id="authBox">
+  <h3>Login / Register</h3>
+  <input id="email" placeholder="Email">
+  <input id="password" type="password" placeholder="Password">
+  <input id="username" placeholder="Username (new users)">
+  <button onclick="register()">Register</button>
+  <button onclick="login()">Login</button>
+</div>
+
+<div id="forumsBar" class="hidden">
+  <h3>Forums</h3>
+  <div id="forumList"></div>
+  <button id="newForumBtn" onclick="createForum()">+ New Forum</button>
+  <hr>
+  <div id="currentUserDisplay"></div>
+  <button onclick="logout()">Logout</button>
+</div>
+
+<div id="chatArea" class="hidden">
+  <div id="messages"></div>
+  <div id="inputArea">
+    <input id="messageInput" placeholder="Message...">
+    <input type="file" id="imageInput">
+    <button onclick="sendMessage()">Send</button>
+  </div>
+</div>
+
+<script type="module">
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getDatabase, ref, set, push, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
+
+/* YOUR CONFIG */
+const firebaseConfig = {
+  apiKey: "AIzaSyAXk3WRhXoKvMFGSmoJ92V4YUnmNWIS0dY",
+  authDomain: "schoolforum-dd574.firebaseapp.com",
+  databaseURL: "https://schoolforum-dd574-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "schoolforum-dd574",
+  storageBucket: "schoolforum-dd574.firebasestorage.app",
+  messagingSenderId: "1013654532078",
+  appId: "1:1013654532078:web:388c4e59d3524e8d6e28ff",
+  measurementId: "G-9J9WPPK601"
+};
+
+const app = initializeApp(firebaseConfig);
+getAnalytics(app);
+const auth = getAuth(app);
+const db = getDatabase(app);
+const storage = getStorage(app);
+
+let currentForum = null;
+let currentUsername = null;
+
+/* AUTH */
+
+window.register = async () => {
+  const userCred = await createUserWithEmailAndPassword(auth, email.value, password.value);
+  await set(ref(db, 'users/' + userCred.user.uid), {
+    username: username.value
+  });
+};
+
+window.login = () => signInWithEmailAndPassword(auth, email.value, password.value);
+window.logout = () => signOut(auth);
+
+onAuthStateChanged(auth, user => {
+  if (user) {
+    authBox.classList.add("hidden");
+    forumsBar.classList.remove("hidden");
+    chatArea.classList.remove("hidden");
+
+    onValue(ref(db, 'users/' + user.uid), snap => {
+      currentUsername = snap.val().username;
+      currentUserDisplay.innerText = "Logged in as: " + currentUsername;
+    });
+
+    loadForums();
+  } else {
+    location.reload();
+  }
+});
+
+/* FORUMS */
+
+window.createForum = () => {
+  const name = prompt("Forum name?");
+  if (!name) return;
+  push(ref(db, "forums"), { name });
+};
+
+function loadForums() {
+  onValue(ref(db, "forums"), snapshot => {
+    forumList.innerHTML = "";
+    snapshot.forEach(child => {
+      const forum = child.val();
+      const div = document.createElement("div");
+      div.className = "forumItem";
+      div.innerText = "# " + forum.name;
+      div.onclick = () => {
+        currentForum = child.key;
+        loadMessages();
+      };
+      forumList.appendChild(div);
+    });
+  });
+}
+
+/* MESSAGES */
+
+window.sendMessage = async () => {
+  if (!currentForum) return alert("Select a forum first.");
+
+  const text = messageInput.value;
+  const file = imageInput.files[0];
+
+  const msgRef = push(ref(db, 'messages/' + currentForum));
+
+  let imageUrl = null;
+
+  if (file) {
+    const imageRef = sRef(storage, 'images/' + msgRef.key);
+    await uploadBytes(imageRef, file);
+    imageUrl = await getDownloadURL(imageRef);
+  }
+
+  await set(msgRef, {
+    text: text || "",
+    image: imageUrl,
+    username: currentUsername,
+    uid: auth.currentUser.uid,
+    timestamp: Date.now()
+  });
+
+  messageInput.value = "";
+  imageInput.value = "";
+};
+
+function loadMessages() {
+  onValue(ref(db, 'messages/' + currentForum), snapshot => {
+    messages.innerHTML = "";
+    snapshot.forEach(child => {
+      const msg = child.val();
+      const msgDiv = document.createElement("div");
+      msgDiv.className = "message";
+
+      msgDiv.innerHTML = `
+        <div class="username">${msg.username}</div>
+        <div class="text">${msg.text || ""}</div>
+        ${msg.image ? `<img src="${msg.image}" class="messageImage">` : ""}
+        ${msg.uid === auth.currentUser.uid ? 
+          `<div class="controls" onclick="editMessage('${child.key}')">Edit</div>
+           <div class="controls" onclick="deleteMessage('${child.key}')">Delete</div>` 
+        : ""}
+      `;
+      messages.appendChild(msgDiv);
+    });
+    messages.scrollTop = messages.scrollHeight;
+  });
+}
+
+window.deleteMessage = (id) => {
+  remove(ref(db, 'messages/' + currentForum + '/' + id));
+};
+
+window.editMessage = (id) => {
+  const newText = prompt("Edit message:");
+  if (newText !== null)
+    update(ref(db, 'messages/' + currentForum + '/' + id), {
+      text: newText
+    });
+};
+
+</script>
+</body>
+</html>
