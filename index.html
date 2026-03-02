@@ -214,6 +214,23 @@ onAuthStateChanged(auth, user => {
     forumsBar.classList.remove("hidden");
     chatArea.classList.remove("hidden");
 
+    // Load username once
+    onValue(ref(db, 'users/' + user.uid), snap => {
+      if (snap.exists()) {
+        currentUsername = snap.val().username;
+        currentUserDisplay.innerText = "Logged in as: " + currentUsername;
+      }
+    }, { onlyOnce: true });
+
+    loadForums();
+  } else {
+    // Just show login screen — NO reload
+    authBox.classList.remove("hidden");
+    forumsBar.classList.add("hidden");
+    chatArea.classList.add("hidden");
+  }
+});
+
     onValue(ref(db, 'users/' + user.uid), snap => {
       currentUsername = snap.val().username;
       currentUserDisplay.innerText = "Logged in as: " + currentUsername;
@@ -281,7 +298,18 @@ window.sendMessage = async () => {
 };
 
 function loadMessages() {
-  onValue(ref(db, 'messages/' + currentForum), snapshot => {
+  let messageListener = null;
+
+function loadMessages() {
+  if (!currentForum) return;
+
+  if (messageListener) {
+    messageListener(); // detach previous listener
+  }
+
+  const messagesRef = ref(db, 'messages/' + currentForum);
+
+  messageListener = onValue(messagesRef, snapshot => {
     messages.innerHTML = "";
     snapshot.forEach(child => {
       const msg = child.val();
@@ -299,13 +327,10 @@ function loadMessages() {
       `;
       messages.appendChild(msgDiv);
     });
+
     messages.scrollTop = messages.scrollHeight;
   });
 }
-
-window.deleteMessage = (id) => {
-  remove(ref(db, 'messages/' + currentForum + '/' + id));
-};
 
 window.editMessage = (id) => {
   const newText = prompt("Edit message:");
