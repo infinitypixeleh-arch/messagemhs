@@ -11,6 +11,11 @@ body {
   font-family: "Segoe UI", sans-serif;
   background: #2b2d31;
   color: white;
+  height: 100vh;
+}
+
+/* Layout */
+#app {
   display: flex;
   height: 100vh;
 }
@@ -42,7 +47,7 @@ body {
   background: #3a3d44;
 }
 
-/* Chat Area */
+/* Chat */
 #chatArea {
   flex: 1;
   display: flex;
@@ -85,7 +90,6 @@ body {
   opacity: 1;
 }
 
-/* Input */
 #inputArea {
   padding: 10px;
   background: #313338;
@@ -116,11 +120,14 @@ button:hover {
 }
 
 /* Auth */
+#authContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
 #authBox {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
   background: #1e1f22;
   padding: 20px;
   border-radius: 8px;
@@ -145,30 +152,36 @@ input {
 
 <body>
 
-<div id="authBox">
-  <h3>Login / Register</h3>
-  <input id="email" placeholder="Email">
-  <input id="password" type="password" placeholder="Password">
-  <input id="username" placeholder="Username (new users only)">
-  <button id="registerBtn">Register</button>
-  <button id="loginBtn">Login</button>
+<!-- AUTH VIEW -->
+<div id="authContainer">
+  <div id="authBox">
+    <h3>Login / Register</h3>
+    <input id="email" placeholder="Email">
+    <input id="password" type="password" placeholder="Password">
+    <input id="username" placeholder="Username (new users only)">
+    <button id="registerBtn">Register</button>
+    <button id="loginBtn">Login</button>
+  </div>
 </div>
 
-<div id="sidebar" class="hidden">
-  <h3>Forums</h3>
-  <div id="forumList"></div>
-  <button id="createForumBtn">+ New Forum</button>
-  <hr>
-  <div id="userDisplay"></div>
-  <button id="logoutBtn">Logout</button>
-</div>
+<!-- APP VIEW -->
+<div id="app" class="hidden">
+  <div id="sidebar">
+    <h3>Forums</h3>
+    <div id="forumList"></div>
+    <button id="createForumBtn">+ New Forum</button>
+    <hr>
+    <div id="userDisplay"></div>
+    <button id="logoutBtn">Logout</button>
+  </div>
 
-<div id="chatArea" class="hidden">
-  <div id="messages"></div>
-  <div id="inputArea">
-    <input id="messageInput" placeholder="Message...">
-    <input type="file" id="imageInput">
-    <button id="sendBtn">Send</button>
+  <div id="chatArea">
+    <div id="messages"></div>
+    <div id="inputArea">
+      <input id="messageInput" placeholder="Message...">
+      <input type="file" id="imageInput">
+      <button id="sendBtn">Send</button>
+    </div>
   </div>
 </div>
 
@@ -180,7 +193,6 @@ import { getDatabase, ref, set, push, onValue, update, remove, off } from "https
 import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
 
-/* YOUR FIREBASE CONFIG */
 const firebaseConfig = {
   apiKey: "AIzaSyAXk3WRhXoKvMFGSmoJ92V4YUnmNWIS0dY",
   authDomain: "schoolforum-dd574.firebaseapp.com",
@@ -199,52 +211,48 @@ const db = getDatabase(app);
 const storage = getStorage(app);
 
 /* DOM */
-const authBox = document.getElementById("authBox");
-const sidebar = document.getElementById("sidebar");
-const chatArea = document.getElementById("chatArea");
+const authContainer = document.getElementById("authContainer");
+const appContainer = document.getElementById("app");
 const forumList = document.getElementById("forumList");
 const messagesDiv = document.getElementById("messages");
 
 let currentForum = null;
 let currentUsername = null;
-let messageRef = null;
+let messageListenerRef = null;
 
-/* AUTH */
-document.getElementById("registerBtn").onclick = async () => {
-  const userCred = await createUserWithEmailAndPassword(auth, email.value, password.value);
-  await set(ref(db, "users/" + userCred.user.uid), {
+/* AUTH BUTTONS */
+registerBtn.onclick = async () => {
+  const cred = await createUserWithEmailAndPassword(auth, email.value, password.value);
+  await set(ref(db, "users/" + cred.user.uid), {
     username: username.value
   });
 };
 
-document.getElementById("loginBtn").onclick =
-  () => signInWithEmailAndPassword(auth, email.value, password.value);
+loginBtn.onclick = () =>
+  signInWithEmailAndPassword(auth, email.value, password.value);
 
-document.getElementById("logoutBtn").onclick =
-  () => signOut(auth);
+logoutBtn.onclick = () => signOut(auth);
 
+/* AUTH STATE HANDLER */
 onAuthStateChanged(auth, user => {
   if (user) {
-    authBox.classList.add("hidden");
-    sidebar.classList.remove("hidden");
-    chatArea.classList.remove("hidden");
+    authContainer.classList.add("hidden");
+    appContainer.classList.remove("hidden");
 
     onValue(ref(db, "users/" + user.uid), snap => {
       currentUsername = snap.val().username;
-      document.getElementById("userDisplay").innerText =
-        "Logged in as: " + currentUsername;
+      userDisplay.innerText = "Logged in as: " + currentUsername;
     }, { onlyOnce: true });
 
     loadForums();
   } else {
-    authBox.classList.remove("hidden");
-    sidebar.classList.add("hidden");
-    chatArea.classList.add("hidden");
+    appContainer.classList.add("hidden");
+    authContainer.classList.remove("hidden");
   }
 });
 
 /* FORUMS */
-document.getElementById("createForumBtn").onclick = () => {
+createForumBtn.onclick = () => {
   const name = prompt("Forum name?");
   if (!name) return;
   push(ref(db, "forums"), { name });
@@ -265,14 +273,14 @@ function loadForums() {
 
 function selectForum(id) {
   currentForum = id;
-  if (messageRef) off(messageRef);
-  messageRef = ref(db, "messages/" + id);
+  if (messageListenerRef) off(messageListenerRef);
+  messageListenerRef = ref(db, "messages/" + id);
   loadMessages();
 }
 
 /* MESSAGES */
 function loadMessages() {
-  onValue(messageRef, snapshot => {
+  onValue(messageListenerRef, snapshot => {
     messagesDiv.innerHTML = "";
     snapshot.forEach(child => {
       const msg = child.val();
@@ -312,12 +320,11 @@ function loadMessages() {
   });
 }
 
-document.getElementById("sendBtn").onclick = async () => {
+sendBtn.onclick = async () => {
   if (!currentForum) return alert("Select a forum first.");
 
   const text = messageInput.value.trim();
   const file = imageInput.files[0];
-
   if (!text && !file) return;
 
   const msgRef = push(ref(db, "messages/" + currentForum));
