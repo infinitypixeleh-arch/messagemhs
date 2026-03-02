@@ -193,6 +193,7 @@ import { getDatabase, ref, set, push, onValue, update, remove, off } from "https
 import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
 
+/* CONFIG */
 const firebaseConfig = {
   apiKey: "AIzaSyAXk3WRhXoKvMFGSmoJ92V4YUnmNWIS0dY",
   authDomain: "schoolforum-dd574.firebaseapp.com",
@@ -210,144 +211,162 @@ const auth = getAuth(app);
 const db = getDatabase(app);
 const storage = getStorage(app);
 
-/* DOM */
-const authContainer = document.getElementById("authContainer");
-const appContainer = document.getElementById("app");
-const forumList = document.getElementById("forumList");
-const messagesDiv = document.getElementById("messages");
+/* WAIT FOR DOM */
+document.addEventListener("DOMContentLoaded", () => {
 
-let currentForum = null;
-let currentUsername = null;
-let messageListenerRef = null;
+  // ===== DOM ELEMENTS =====
+  const authContainer = document.getElementById("authContainer");
+  const appContainer = document.getElementById("app");
+  const registerBtn = document.getElementById("registerBtn");
+  const loginBtn = document.getElementById("loginBtn");
+  const logoutBtn = document.getElementById("logoutBtn");
+  const createForumBtn = document.getElementById("createForumBtn");
+  const sendBtn = document.getElementById("sendBtn");
+  const forumList = document.getElementById("forumList");
+  const messagesDiv = document.getElementById("messages");
+  const userDisplay = document.getElementById("userDisplay");
 
-/* AUTH BUTTONS */
-registerBtn.onclick = async () => {
-  const cred = await createUserWithEmailAndPassword(auth, email.value, password.value);
-  await set(ref(db, "users/" + cred.user.uid), {
-    username: username.value
+  const emailInput = document.getElementById("email");
+  const passwordInput = document.getElementById("password");
+  const usernameInput = document.getElementById("username");
+  const messageInput = document.getElementById("messageInput");
+  const imageInput = document.getElementById("imageInput");
+
+  let currentForum = null;
+  let currentUsername = null;
+  let messageRef = null;
+
+  // ===== AUTH BUTTONS =====
+  registerBtn.addEventListener("click", async () => {
+    const cred = await createUserWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+    await set(ref(db, "users/" + cred.user.uid), {
+      username: usernameInput.value
+    });
   });
-};
 
-loginBtn.onclick = () =>
-  signInWithEmailAndPassword(auth, email.value, password.value);
+  loginBtn.addEventListener("click", () => {
+    signInWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+  });
 
-logoutBtn.onclick = () => signOut(auth);
+  logoutBtn.addEventListener("click", () => signOut(auth));
 
-/* AUTH STATE HANDLER */
-onAuthStateChanged(auth, user => {
-  if (user) {
-    authContainer.classList.add("hidden");
-    appContainer.classList.remove("hidden");
+  // ===== AUTH STATE =====
+  onAuthStateChanged(auth, user => {
+    if (user) {
+      authContainer.classList.add("hidden");
+      appContainer.classList.remove("hidden");
 
-    onValue(ref(db, "users/" + user.uid), snap => {
-      currentUsername = snap.val().username;
-      userDisplay.innerText = "Logged in as: " + currentUsername;
-    }, { onlyOnce: true });
+      onValue(ref(db, "users/" + user.uid), snap => {
+        currentUsername = snap.val().username;
+        userDisplay.innerText = "Logged in as: " + currentUsername;
+      }, { onlyOnce: true });
 
-    loadForums();
-  } else {
-    appContainer.classList.add("hidden");
-    authContainer.classList.remove("hidden");
+      loadForums();
+    } else {
+      appContainer.classList.add("hidden");
+      authContainer.classList.remove("hidden");
+    }
+  });
+
+  // ===== FORUMS =====
+  createForumBtn.addEventListener("click", () => {
+    const name = prompt("Forum name?");
+    if (!name) return;
+    push(ref(db, "forums"), { name });
+  });
+
+  function loadForums() {
+    onValue(ref(db, "forums"), snapshot => {
+      forumList.innerHTML = "";
+      snapshot.forEach(child => {
+        const div = document.createElement("div");
+        div.className = "forumItem";
+        div.innerText = "# " + child.val().name;
+        div.addEventListener("click", () => selectForum(child.key));
+        forumList.appendChild(div);
+      });
+    });
   }
+
+  function selectForum(id) {
+    currentForum = id;
+    if (messageRef) off(messageRef);
+    messageRef = ref(db, "messages/" + id);
+    loadMessages();
+  }
+
+  // ===== MESSAGES =====
+  function loadMessages() {
+    onValue(messageRef, snapshot => {
+      messagesDiv.innerHTML = "";
+      snapshot.forEach(child => {
+        const msg = child.val();
+        const div = document.createElement("div");
+        div.className = "message";
+
+        div.innerHTML = `
+          <div class="username">${msg.username}</div>
+          <div class="text">${msg.text || ""}</div>
+          ${msg.image ? `<img src="${msg.image}" class="messageImage">` : ""}
+        `;
+
+        if (msg.uid === auth.currentUser.uid) {
+          const edit = document.createElement("div");
+          edit.className = "controls";
+          edit.innerText = "Edit";
+          edit.onclick = () => {
+            const newText = prompt("Edit message:", msg.text);
+            if (newText !== null)
+              update(ref(db, "messages/" + currentForum + "/" + child.key), {
+                text: newText
+              });
+          };
+
+          const del = document.createElement("div");
+          del.className = "controls";
+          del.innerText = "Delete";
+          del.onclick = () =>
+            remove(ref(db, "messages/" + currentForum + "/" + child.key));
+
+          div.appendChild(edit);
+          div.appendChild(del);
+        }
+
+        messagesDiv.appendChild(div);
+      });
+    });
+  }
+
+  // ===== SEND MESSAGE =====
+  sendBtn.addEventListener("click", async () => {
+    if (!currentForum) return alert("Select a forum first.");
+
+    const text = messageInput.value.trim();
+    const file = imageInput.files[0];
+    if (!text && !file) return;
+
+    const msgRef = push(ref(db, "messages/" + currentForum));
+    let imageUrl = null;
+
+    if (file) {
+      const imageRef = sRef(storage, "images/" + msgRef.key);
+      await uploadBytes(imageRef, file);
+      imageUrl = await getDownloadURL(imageRef);
+    }
+
+    await set(msgRef, {
+      text,
+      image: imageUrl,
+      username: currentUsername,
+      uid: auth.currentUser.uid,
+      timestamp: Date.now()
+    });
+
+    messageInput.value = "";
+    imageInput.value = "";
+  });
+
 });
-
-/* FORUMS */
-createForumBtn.onclick = () => {
-  const name = prompt("Forum name?");
-  if (!name) return;
-  push(ref(db, "forums"), { name });
-};
-
-function loadForums() {
-  onValue(ref(db, "forums"), snapshot => {
-    forumList.innerHTML = "";
-    snapshot.forEach(child => {
-      const div = document.createElement("div");
-      div.className = "forumItem";
-      div.innerText = "# " + child.val().name;
-      div.onclick = () => selectForum(child.key);
-      forumList.appendChild(div);
-    });
-  });
-}
-
-function selectForum(id) {
-  currentForum = id;
-  if (messageListenerRef) off(messageListenerRef);
-  messageListenerRef = ref(db, "messages/" + id);
-  loadMessages();
-}
-
-/* MESSAGES */
-function loadMessages() {
-  onValue(messageListenerRef, snapshot => {
-    messagesDiv.innerHTML = "";
-    snapshot.forEach(child => {
-      const msg = child.val();
-      const div = document.createElement("div");
-      div.className = "message";
-
-      div.innerHTML = `
-        <div class="username">${msg.username}</div>
-        <div class="text">${msg.text || ""}</div>
-        ${msg.image ? `<img src="${msg.image}" class="messageImage">` : ""}
-      `;
-
-      if (msg.uid === auth.currentUser.uid) {
-        const edit = document.createElement("div");
-        edit.className = "controls";
-        edit.innerText = "Edit";
-        edit.onclick = () => {
-          const newText = prompt("Edit message:", msg.text);
-          if (newText !== null)
-            update(ref(db, "messages/" + currentForum + "/" + child.key), {
-              text: newText
-            });
-        };
-
-        const del = document.createElement("div");
-        del.className = "controls";
-        del.innerText = "Delete";
-        del.onclick = () =>
-          remove(ref(db, "messages/" + currentForum + "/" + child.key));
-
-        div.appendChild(edit);
-        div.appendChild(del);
-      }
-
-      messagesDiv.appendChild(div);
-    });
-  });
-}
-
-sendBtn.onclick = async () => {
-  if (!currentForum) return alert("Select a forum first.");
-
-  const text = messageInput.value.trim();
-  const file = imageInput.files[0];
-  if (!text && !file) return;
-
-  const msgRef = push(ref(db, "messages/" + currentForum));
-  let imageUrl = null;
-
-  if (file) {
-    const imageRef = sRef(storage, "images/" + msgRef.key);
-    await uploadBytes(imageRef, file);
-    imageUrl = await getDownloadURL(imageRef);
-  }
-
-  await set(msgRef, {
-    text,
-    image: imageUrl,
-    username: currentUsername,
-    uid: auth.currentUser.uid,
-    timestamp: Date.now()
-  });
-
-  messageInput.value = "";
-  imageInput.value = "";
-};
-
 </script>
 </body>
 </html>
