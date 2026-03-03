@@ -84,6 +84,8 @@ body {
   font-size: 11px;
   opacity: 0.6;
   cursor: pointer;
+  display: flex; /* Make controls inline for edit/delete */
+  gap: 10px; /* Space between controls */
 }
 
 .controls:hover {
@@ -206,14 +208,18 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-getAnalytics(app);
+getAnalytics(app); // Ensure analytics is initialized
 const auth = getAuth(app);
 const db = getDatabase(app);
 const storage = getStorage(app);
 
+// Global variables for current state (initialized outside DOMContentLoaded)
+let currentForum = null;
+let currentUsername = null;
+let messageRef = null;
+
 /* WAIT FOR DOM */
 document.addEventListener("DOMContentLoaded", () => {
-
   // ===== DOM ELEMENTS =====
   const authContainer = document.getElementById("authContainer");
   const appContainer = document.getElementById("app");
@@ -232,184 +238,55 @@ document.addEventListener("DOMContentLoaded", () => {
   const messageInput = document.getElementById("messageInput");
   const imageInput = document.getElementById("imageInput");
 
-  let currentForum = null;
-  let currentUsername = null;
-  let messageRef = null;
-
-// Assuming 'auth', 'db', 'emailInput', 'passwordInput', 'usernameInput',
-// 'registerBtn', 'loginBtn', 'logoutBtn', 'authContainer', 'appContainer',
-// 'userDisplay', 'createForumBtn', and 'loadForums' are defined elsewhere in your script.
-// Also, ensure you have imported the necessary Firebase functions:
-// import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-// import { getDatabase, ref, set, push, onValue } from 'firebase/database';
-
-// ===== AUTH BUTTONS =====
-registerBtn.addEventListener("click", async () => {
-  try {
-    const cred = await createUserWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
-    await set(ref(db, "users/" + cred.user.uid), {
-      username: usernameInput.value
-    });
-    console.log("Registration successful!");
-    alert("Registration successful!"); // Optional: User feedback
-  } catch (error) {
-    console.error("Registration error:", error.message);
-    alert("Registration failed: " + error.message); // Provide user feedback
-  }
-});
-
-loginBtn.addEventListener("click", async () => {
-  try {
-    await signInWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
-    console.log("Login successful!");
-    // The onAuthStateChanged listener will handle UI updates, so no need for alert here
-  } catch (error) {
-    console.error("Login error:", error.message);
-    alert("Login failed: " + error.message); // Provide user feedback
-    // You might also want to clear password input or focus on it again
-  }
-});
-
-logoutBtn.addEventListener("click", () => signOut(auth));
-
-// ===== AUTH STATE =====
-let currentUsername = ""; // Initialize currentUsername
-onAuthStateChanged(auth, user => {
-  if (user) {
-    authContainer.classList.add("hidden");
-    appContainer.classList.remove("hidden");
-
-    onValue(ref(db, "users/" + user.uid), snap => {
-      // Check if snap.val() exists before accessing .username
-      if (snap.val() && snap.val().username) {
-        currentUsername = snap.val().username;
-        userDisplay.innerText = "Logged in as: " + currentUsername;
-      } else {
-        userDisplay.innerText = "Logged in as: User (username not set)";
-        console.warn("User data or username not found in Realtime Database.");
+  // ===== AUTH BUTTONS =====
+  registerBtn.addEventListener("click", async () => {
+    try {
+      if (emailInput.value.trim() === "" || passwordInput.value.trim() === "" || usernameInput.value.trim() === "") {
+        return alert("Please fill in email, password, and username to register.");
       }
-    }, { onlyOnce: true });
-
-    // Ensure loadForums() is defined somewhere in your script
-    if (typeof loadForums === 'function') {
-      loadForums();
-    } else {
-      console.warn("loadForums() function is not defined.");
+      const cred = await createUserWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+      await set(ref(db, "users/" + cred.user.uid), {
+        username: usernameInput.value.trim()
+      });
+      console.log("Registration successful for:", cred.user.email);
+      alert("Registration successful! You are now logged in.");
+    } catch (error) {
+      console.error("Registration error:", error.message);
+      alert("Registration failed: " + error.message);
     }
-
-  } else {
-    appContainer.classList.add("hidden");
-    authContainer.classList.remove("hidden");
-    userDisplay.innerText = ""; // Clear user display on logout
-  }
-});
-
-// ===== FORUMS =====
-createForumBtn.addEventListener("click", () => {
-  const name = prompt("Forum name?");
-  if (!name) return;
-  push(ref(db, "forums"), { name });
-});
-
-  // ===== FORUMS =====
-  createForumBtn.addEventListener("click", () => {
-    const name = prompt("Forum name?");
-    if (!name) return;
-    push(ref(db, "forums"), { name });
   });
 
-  function loadForums() {
-    onValue(ref(db, "forums"), snapshot => {
-      forumList.innerHTML = "";
-      snapshot.forEach(child => {
-        const div = document.createElement("div");
-        div.className = "forumItem";
-        div.innerText = "# " + child.val().name;
-        div.addEventListener("click", () => selectForum(child.key));
-        forumList.appendChild(div);
-      });
-    });
-  }
-
-  function selectForum(id) {
-    currentForum = id;
-    if (messageRef) off(messageRef);
-    messageRef = ref(db, "messages/" + id);
-    loadMessages();
-  }
-
-  // ===== MESSAGES =====
-  function loadMessages() {
-    onValue(messageRef, snapshot => {
-      messagesDiv.innerHTML = "";
-      snapshot.forEach(child => {
-        const msg = child.val();
-        const div = document.createElement("div");
-        div.className = "message";
-
-        div.innerHTML = `
-          <div class="username">${msg.username}</div>
-          <div class="text">${msg.text || ""}</div>
-          ${msg.image ? `<img src="${msg.image}" class="messageImage">` : ""}
-        `;
-
-        if (msg.uid === auth.currentUser.uid) {
-          const edit = document.createElement("div");
-          edit.className = "controls";
-          edit.innerText = "Edit";
-          edit.onclick = () => {
-            const newText = prompt("Edit message:", msg.text);
-            if (newText !== null)
-              update(ref(db, "messages/" + currentForum + "/" + child.key), {
-                text: newText
-              });
-          };
-
-          const del = document.createElement("div");
-          del.className = "controls";
-          del.innerText = "Delete";
-          del.onclick = () =>
-            remove(ref(db, "messages/" + currentForum + "/" + child.key));
-
-          div.appendChild(edit);
-          div.appendChild(del);
-        }
-
-        messagesDiv.appendChild(div);
-      });
-    });
-  }
-
-  // ===== SEND MESSAGE =====
-  sendBtn.addEventListener("click", async () => {
-    if (!currentForum) return alert("Select a forum first.");
-
-    const text = messageInput.value.trim();
-    const file = imageInput.files[0];
-    if (!text && !file) return;
-
-    const msgRef = push(ref(db, "messages/" + currentForum));
-    let imageUrl = null;
-
-    if (file) {
-      const imageRef = sRef(storage, "images/" + msgRef.key);
-      await uploadBytes(imageRef, file);
-      imageUrl = await getDownloadURL(imageRef);
+  loginBtn.addEventListener("click", async () => { // Made async for proper error handling
+    try {
+      if (emailInput.value.trim() === "" || passwordInput.value.trim() === "") {
+        return alert("Please fill in email and password to log in.");
+      }
+      await signInWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+      console.log("Login successful!");
+      // onAuthStateChanged will handle UI updates
+    } catch (error) {
+      console.error("Login error:", error.message);
+      alert("Login failed: " + error.message);
     }
-
-    await set(msgRef, {
-      text,
-      image: imageUrl,
-      username: currentUsername,
-      uid: auth.currentUser.uid,
-      timestamp: Date.now()
-    });
-
-    messageInput.value = "";
-    imageInput.value = "";
   });
 
-});
-</script>
-</body>
-</html>
+  logoutBtn.addEventListener("click", async () => { // Made async for potential errors
+    try {
+      await signOut(auth);
+      console.log("Logged out successfully.");
+      alert("You have been logged out.");
+    } catch (error) {
+      console.error("Logout error:", error.message);
+      alert("Logout failed: " + error.message);
+    }
+  });
+
+  // ===== AUTH STATE =====
+  onAuthStateChanged(auth, user => {
+    if (user) {
+      authContainer.classList.add("hidden");
+      appContainer.classList.remove("hidden");
+
+      // Fetch username from Realtime Database
+      onValue(ref(db, "users/" + user.uid), snap => {
+        if (snap.exists() && snap.val().username) { // Check if snapshot exists and hasNo response
