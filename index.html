@@ -236,37 +236,80 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentUsername = null;
   let messageRef = null;
 
-  // ===== AUTH BUTTONS =====
-  registerBtn.addEventListener("click", async () => {
+// Assuming 'auth', 'db', 'emailInput', 'passwordInput', 'usernameInput',
+// 'registerBtn', 'loginBtn', 'logoutBtn', 'authContainer', 'appContainer',
+// 'userDisplay', 'createForumBtn', and 'loadForums' are defined elsewhere in your script.
+// Also, ensure you have imported the necessary Firebase functions:
+// import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+// import { getDatabase, ref, set, push, onValue } from 'firebase/database';
+
+// ===== AUTH BUTTONS =====
+registerBtn.addEventListener("click", async () => {
+  try {
     const cred = await createUserWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
     await set(ref(db, "users/" + cred.user.uid), {
       username: usernameInput.value
     });
-  });
+    console.log("Registration successful!");
+    alert("Registration successful!"); // Optional: User feedback
+  } catch (error) {
+    console.error("Registration error:", error.message);
+    alert("Registration failed: " + error.message); // Provide user feedback
+  }
+});
 
-  loginBtn.addEventListener("click", () => {
-    signInWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
-  });
+loginBtn.addEventListener("click", async () => {
+  try {
+    await signInWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+    console.log("Login successful!");
+    // The onAuthStateChanged listener will handle UI updates, so no need for alert here
+  } catch (error) {
+    console.error("Login error:", error.message);
+    alert("Login failed: " + error.message); // Provide user feedback
+    // You might also want to clear password input or focus on it again
+  }
+});
 
-  logoutBtn.addEventListener("click", () => signOut(auth));
+logoutBtn.addEventListener("click", () => signOut(auth));
 
-  // ===== AUTH STATE =====
-  onAuthStateChanged(auth, user => {
-    if (user) {
-      authContainer.classList.add("hidden");
-      appContainer.classList.remove("hidden");
+// ===== AUTH STATE =====
+let currentUsername = ""; // Initialize currentUsername
+onAuthStateChanged(auth, user => {
+  if (user) {
+    authContainer.classList.add("hidden");
+    appContainer.classList.remove("hidden");
 
-      onValue(ref(db, "users/" + user.uid), snap => {
+    onValue(ref(db, "users/" + user.uid), snap => {
+      // Check if snap.val() exists before accessing .username
+      if (snap.val() && snap.val().username) {
         currentUsername = snap.val().username;
         userDisplay.innerText = "Logged in as: " + currentUsername;
-      }, { onlyOnce: true });
+      } else {
+        userDisplay.innerText = "Logged in as: User (username not set)";
+        console.warn("User data or username not found in Realtime Database.");
+      }
+    }, { onlyOnce: true });
 
+    // Ensure loadForums() is defined somewhere in your script
+    if (typeof loadForums === 'function') {
       loadForums();
     } else {
-      appContainer.classList.add("hidden");
-      authContainer.classList.remove("hidden");
+      console.warn("loadForums() function is not defined.");
     }
-  });
+
+  } else {
+    appContainer.classList.add("hidden");
+    authContainer.classList.remove("hidden");
+    userDisplay.innerText = ""; // Clear user display on logout
+  }
+});
+
+// ===== FORUMS =====
+createForumBtn.addEventListener("click", () => {
+  const name = prompt("Forum name?");
+  if (!name) return;
+  push(ref(db, "forums"), { name });
+});
 
   // ===== FORUMS =====
   createForumBtn.addEventListener("click", () => {
